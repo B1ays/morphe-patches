@@ -9,12 +9,15 @@ package app.morphe.extension.reddit.settings;
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 import static app.morphe.extension.shared.settings.Setting.migrateOldSettingToNew;
+import static app.morphe.extension.shared.settings.Setting.parent;
 
 import app.morphe.extension.shared.settings.BaseSettings;
 import app.morphe.extension.shared.settings.BooleanSetting;
 import app.morphe.extension.shared.settings.Setting;
 import app.morphe.extension.shared.settings.StringSetting;
 import app.morphe.extension.shared.settings.preference.SharedPrefCategory;
+
+import java.util.Locale;
 
 public class Settings extends BaseSettings {
     // Ads
@@ -44,6 +47,14 @@ public class Settings extends BaseSettings {
     public static final BooleanSetting REMOVE_NOTIFICATION_DIALOG = new BooleanSetting("morphe_remove_notification_dialog", FALSE, true);
     public static final BooleanSetting SHOW_VIEW_COUNT = new BooleanSetting("morphe_show_view_count", FALSE, true);
 
+    // Translation
+    public static final BooleanSetting TRANSLATE_ALL_POSTS = new BooleanSetting("morphe_translate_all_posts", FALSE);
+    /** A value of the shared language list: DEFAULT (app language) or an ISO 639 code in upper case. */
+    public static final StringSetting TRANSLATION_LANGUAGE = new StringSetting("morphe_translation_language", "DEFAULT");
+    public static final BooleanSetting TRANSLATION_YANDEX_FALLBACK = new BooleanSetting("morphe_translation_yandex_fallback", TRUE);
+    /** The Reddit translation of a single comment returns nothing for most users: it works with Yandex. */
+    public static final BooleanSetting TRANSLATION_COMMENT_MENU = new BooleanSetting("morphe_translation_comment_menu", TRUE, parent(TRANSLATION_YANDEX_FALLBACK));
+
     // Miscellaneous
     public static final BooleanSetting OPEN_LINKS_DIRECTLY = new BooleanSetting("morphe_open_links_directly", TRUE);
     public static final BooleanSetting OPEN_LINKS_EXTERNALLY = new BooleanSetting("morphe_open_links_externally", TRUE);
@@ -64,6 +75,14 @@ public class Settings extends BaseSettings {
         migrateOldSettingToNew(DEPRECATED_HIDE_RECOMMENDED_COMMUNITIES_SHELF, HIDE_COMMUNITIES_SHELF);
         migrateOldSettingToNew(DEPRECATED_HIDE_TRENDING_TODAY_SHELF, HIDE_TRENDING_SHELVES);
         migrateOldSettingToNew(DEPRECATED_SANITIZE_URL_QUERY, SANITIZE_SHARING_LINKS);
+
+        // The translation language was typed as an ISO code, empty for the system language.
+        String translationLanguage = TRANSLATION_LANGUAGE.get().trim();
+        if (translationLanguage.isEmpty()) {
+            TRANSLATION_LANGUAGE.resetToDefault();
+        } else if (!translationLanguage.equals(translationLanguage.toUpperCase(Locale.ROOT))) {
+            TRANSLATION_LANGUAGE.save(translationLanguage.split("[-_]")[0].toUpperCase(Locale.ROOT));
+        }
 
         // endregion
     }

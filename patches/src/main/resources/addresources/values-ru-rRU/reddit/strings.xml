@@ -59,6 +59,26 @@ Second \"item\" text"</string>
   <string name="morphe_show_view_count_summary">Ограничение: доступно только если в ответе API указано количество просмотров</string>
   <string name="morphe_remove_nsfw_dialog_title">Удалить диалоговое окно NSFW предупреждения</string>
   <string name="morphe_remove_nsfw_dialog_summary">Автоматически принимает предупреждение о контенте для взрослых при посещении подреддита</string>
+  <string name="morphe_screen_translation_title">Перевод</string>
+  <string name="morphe_translate_all_posts_title">Переводить все посты</string>
+  <string name="morphe_translate_all_posts_summary_on">Посты и комментарии открываются в машинном переводе. Оригинал можно показать через баннер в посте</string>
+  <string name="morphe_translate_all_posts_summary_off">В каждом посте показывается баннер «Перевести». Комментарии переводятся через меню комментария</string>
+  <string name="morphe_translation_language_title">Язык перевода</string>
+  <string name="morphe_translation_yandex_fallback_title">Перевод через Яндекс</string>
+  <string name="morphe_translation_yandex_fallback_summary_on">Если у Reddit нет перевода, посты и комментарии переводит Яндекс. Текст отправляется в Яндекс</string>
+  <string name="morphe_translation_yandex_fallback_summary_off">Используются только переводы Reddit</string>
+  <string name="morphe_translation_banner_title">%1$s · %2$s</string>
+  <string name="morphe_translation_source_reddit">Reddit</string>
+  <string name="morphe_translation_source_yandex">Яндекс</string>
+  <string name="morphe_translation_yandex_error_toast">Не удалось перевести через Яндекс: %s</string>
+  <string name="morphe_translation_yandex_error_network">нет связи с сервисом</string>
+  <string name="morphe_translation_yandex_error_rate_limit">слишком много запросов, попробуйте позже</string>
+  <string name="morphe_translation_yandex_error_status">ошибка сервиса %d</string>
+  <string name="morphe_translation_comment_menu_title">Перевод в меню комментария</string>
+  <string name="morphe_translation_comment_menu_summary_on">В меню комментария есть пункт «Перевести», комментарий переводит Яндекс</string>
+  <string name="morphe_translation_comment_menu_summary_off">Пункт «Перевести» в меню комментария показывается, только если его предлагает Reddit</string>
+  <string name="morphe_translation_unavailable_toast">Перевод на %s недоступен для этого поста</string>
+
   <string name="morphe_screen_miscellaneous_title">Прочие</string>
   <string name="morphe_about_title">Об интеграции</string>
   <string name="morphe_about_summary">Версия и официальные ссылки</string>

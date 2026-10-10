@@ -19,6 +19,7 @@ import app.morphe.extension.reddit.settings.preference.categories.LayoutPreferen
 import app.morphe.extension.reddit.settings.preference.categories.MiscellaneousPreferenceCategory;
 import app.morphe.extension.reddit.settings.preference.categories.NavigationBarPreferenceCategory;
 import app.morphe.extension.reddit.settings.preference.categories.SidebarPreferenceCategory;
+import app.morphe.extension.reddit.settings.preference.categories.TranslationPreferenceCategory;
 import app.morphe.extension.shared.ResourceUtils;
 import app.morphe.extension.shared.settings.BaseSettings;
 import app.morphe.extension.shared.settings.preference.AbstractPreferenceFragment;
@@ -46,6 +47,7 @@ public class RedditPreferenceFragment extends AbstractPreferenceFragment {
         new NavigationBarPreferenceCategory(context, preferenceScreen);
         new SidebarPreferenceCategory(context, preferenceScreen);
         new LayoutPreferenceCategory(context, preferenceScreen);
+        new TranslationPreferenceCategory(context, preferenceScreen);
         new MiscellaneousPreferenceCategory(context, preferenceScreen);
     }
 
