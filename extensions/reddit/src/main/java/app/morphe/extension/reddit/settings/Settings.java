@@ -57,6 +57,8 @@ public class Settings extends BaseSettings {
     public static final StringSetting TRANSLATION_SERVICE = new StringSetting("morphe_translation_service", "YANDEX", parent(TRANSLATION_FALLBACK));
     /** The Reddit translation of a single comment returns nothing for most users: it works with the translation service. */
     public static final BooleanSetting TRANSLATION_COMMENT_MENU = new BooleanSetting("morphe_translation_comment_menu", TRUE, parent(TRANSLATION_FALLBACK));
+    /** The translation indicator of the comment header translates the comment, instead of the comment menu. */
+    public static final BooleanSetting TRANSLATION_COMMENT_BUTTON = new BooleanSetting("morphe_translation_comment_button", FALSE, parent(TRANSLATION_FALLBACK));
 
     // Miscellaneous
     public static final BooleanSetting OPEN_LINKS_DIRECTLY = new BooleanSetting("morphe_open_links_directly", TRUE);

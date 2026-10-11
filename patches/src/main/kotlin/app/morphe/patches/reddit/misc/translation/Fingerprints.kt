@@ -8,6 +8,7 @@
 package app.morphe.patches.reddit.misc.translation
 
 import app.morphe.patcher.Fingerprint
+import app.morphe.patcher.fieldAccess
 import app.morphe.patcher.instanceOf
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.newInstance
@@ -15,6 +16,7 @@ import app.morphe.patcher.resource.ResourceType
 import app.morphe.patcher.resourceLiteral
 import app.morphe.patcher.string
 import com.android.tools.smali.dexlib2.AccessFlags
+import com.android.tools.smali.dexlib2.Opcode
 
 internal const val TRANSLATION_HANDLERS_PACKAGE =
     "Lcom/reddit/postdetail/refactor/events/handlers/translation/"
@@ -25,6 +27,8 @@ internal const val POST_DETAIL_REFRESH_EVENT_HANDLER_CLASS =
 internal const val LINK_CLASS = "Lcom/reddit/domain/model/Link;"
 
 internal const val COMMENT_LINK_CLASS = "Lcom/reddit/comments/models/CommentLink;"
+internal const val COMMENT_CLASS = "Lcom/reddit/domain/model/Comment;"
+internal const val TRANSLATION_INDICATOR_STATE_CLASS = "Lcom/reddit/localization/translations/TranslationIndicatorState;"
 
 /**
  * Builds the post context (all comments, single comment thread, MT SEO...) from the post detail screen arguments.
@@ -188,6 +192,21 @@ internal object PostDetailTranslationBannerFingerprint : Fingerprint(
                 "Lkotlin/jvm/functions/Function1;", "Lkotlin/jvm/functions/Function1;", "L", "L", "I"
             ),
             returnType = "V"
+        )
+    )
+)
+
+/**
+ * Builds the header of a comment, with the state of its translation indicator.
+ */
+internal object CommentHeaderFingerprint : Fingerprint(
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.FINAL),
+    parameters = listOf(COMMENT_CLASS, COMMENT_LINK_CLASS, "Z", "Z", "Z", "Z", "L"),
+    filters = listOf(
+        methodCall(definingClass = COMMENT_CLASS, name = "isTranslatable"),
+        fieldAccess(
+            opcode = Opcode.SGET_OBJECT,
+            smali = "$TRANSLATION_INDICATOR_STATE_CLASS->ClickableTranslate:$TRANSLATION_INDICATOR_STATE_CLASS"
         )
     )
 )

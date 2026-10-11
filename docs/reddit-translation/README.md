@@ -18,6 +18,7 @@ Tested on Reddit **2026.41.0**.
 | Fallback translation | Reddit has translations only for some posts and languages. When there is none, the title and the text of the post are translated by the selected service: Yandex or Google. |
 | Translation source | The banner title shows who translated the post: "… · Reddit", "… · Yandex" or "… · Google". |
 | Translate a comment | The comment menu gets a "Translate" action. The comment is translated by the selected service and shown in place, with the app's own "Show original". |
+| Comment translate button | Optional: comments in another language get a translate button in the header (the app's own translation indicator). A tap translates the comment, the next one shows the original. The "Translate" action of the comment menu is hidden then. |
 | Translation language | "App language" (default) or any language of the shared Morphe language list. |
 
 ## Settings
@@ -31,6 +32,7 @@ Morphe settings → **Translation**:
 | `morphe_translation_fallback` | on | Use the translation service when Reddit has no translation. Text is sent to the service. |
 | `morphe_translation_service` | `YANDEX` | Translation service: `YANDEX` or `GOOGLE`. Available only with the fallback on. |
 | `morphe_translation_comment_menu` | on | "Translate" in the comment menu. Available only with the fallback on. |
+| `morphe_translation_comment_button` | off | Translate button in the comment header instead of the menu action. Available only with the fallback on. |
 
 ## How it works
 
@@ -91,6 +93,21 @@ needed, and the HTML markup of the texts is kept. `TranslationService` selects t
   10 000 characters and 100 texts.
 - **Errors.** Both clients retry 429 and 5xx responses up to 3 times with backoff. The first failure shows
   a toast with the service name; later failures are only logged until a request succeeds again.
+
+### Comment translate button
+
+Reddit draws a translation indicator in the comment header. Its state is computed when the header of a
+comment is built: `None` hides it, `ClickableTranslate` and `ClickableRevert` make it a button that sends
+the comment "Translate" or "Show original" event. Reddit shows it only for comments it considers
+translatable. With the option on, the patch turns `None` into `ClickableTranslate` for comments in a
+known language other than the target language. A tap sends the same event as the menu action, so the
+comment is translated by the selected service and shown in place; afterwards Reddit itself shows the
+indicator as "Show original".
+
+The header is `Row { Column { name row, flair and badge row }, Spacer(weight 1), indicator }`. A row
+measures its children without a weight first, so a long flair and badge left the indicator only a sliver
+at the edge. With the option on, the column gets `weight(10000f, fill = true)`: the indicator is measured
+first at its full size and stays at the end, and the name, the flair and the badge shrink instead.
 
 ### Translation source in the banner
 

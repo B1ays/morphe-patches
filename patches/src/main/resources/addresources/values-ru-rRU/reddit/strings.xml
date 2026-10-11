@@ -79,6 +79,9 @@ Second \"item\" text"</string>
   <string name="morphe_translation_comment_menu_title">Перевод в меню комментария</string>
   <string name="morphe_translation_comment_menu_summary_on">В меню комментария есть пункт «Перевести», комментарий переводит сервис перевода</string>
   <string name="morphe_translation_comment_menu_summary_off">Пункт «Перевести» в меню комментария показывается, только если его предлагает Reddit</string>
+  <string name="morphe_translation_comment_button_title">Кнопка перевода в комментариях</string>
+  <string name="morphe_translation_comment_button_summary_on">У комментариев на другом языке в шапке есть кнопка перевода, пункт «Перевести» в меню комментария скрыт</string>
+  <string name="morphe_translation_comment_button_summary_off">Комментарии переводятся через меню комментария</string>
   <string name="morphe_translation_unavailable_toast">Перевод на %s недоступен для этого поста</string>
 
   <string name="morphe_screen_miscellaneous_title">Прочие</string>

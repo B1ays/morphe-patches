@@ -25,6 +25,7 @@ import com.reddit.domain.model.Comment;
 import com.reddit.domain.model.Link;
 import com.reddit.domain.model.RichTextResponse;
 import com.reddit.localization.translations.TranslatedLink;
+import com.reddit.localization.translations.TranslationIndicatorState;
 import com.reddit.localization.translations.comments.OriginalComment;
 import com.reddit.postdetail.refactor.events.PostDetailRefreshEvent;
 
@@ -42,6 +43,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.regex.Pattern;
 
 import app.morphe.extension.reddit.settings.Settings;
 import app.morphe.extension.reddit.translation.RichTextTranslator;
@@ -340,6 +342,13 @@ public final class PostTranslationPatch {
      */
     @Nullable
     private static Object getScreenOfFunction(Object function) {
+        throw new IllegalStateException();  // Modified during patching.
+    }
+
+    /**
+     * Bridge: Modifier.then(Modifier.weight(weight, fill)), in a row.
+     */
+    private static Object withWeight(Object modifier, float weight, boolean fill) {
         throw new IllegalStateException();  // Modified during patching.
     }
 
@@ -865,6 +874,11 @@ public final class PostTranslationPatch {
      * @return If the "Translate" action is shown.
      */
     public static boolean isCommentTranslateVisible(boolean original, boolean isShowOriginalVisible) {
+        if (isCommentButtonEnabled()) {
+            // The comment is translated with the button of the comment header.
+            overflowMenuComment = null;
+            return false;
+        }
         if (original || isShowOriginalVisible || !Settings.TRANSLATION_COMMENT_MENU.isAvailable()
                 || !Settings.TRANSLATION_COMMENT_MENU.get()) {
             return original;
@@ -879,6 +893,9 @@ public final class PostTranslationPatch {
                 if (menuComment.isTranslated() && isShowingServerTranslation(menuComment)) {
                     return false;
                 }
+                if (!hasTextToTranslate(menuComment.getBody())) {
+                    return false;
+                }
                 String language = menuComment.getLanguageCode();
                 if (language != null && !language.isEmpty()
                         && baseLanguage(language).equals(baseLanguage(getTargetLanguage()))) {
@@ -889,6 +906,83 @@ public final class PostTranslationPatch {
         } catch (Exception ex) {
             Logger.printException(() -> "isCommentTranslateVisible failure", ex);
             return original;
+        }
+    }
+
+    /** Image and gif of a comment markdown: ![img](...), ![gif](...). */
+    private static final Pattern MARKDOWN_MEDIA = Pattern.compile("!\\[[^\\]]*]\\([^)]*\\)");
+
+    /**
+     * @return If a comment markdown has text besides its media.
+     */
+    private static boolean hasTextToTranslate(@Nullable String markdown) {
+        if (markdown == null) {
+            return false;
+        }
+        String text = MARKDOWN_MEDIA.matcher(markdown).replaceAll("");
+        for (int i = 0, length = text.length(); i < length; i++) {
+            if (Character.isLetter(text.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Weight of the column with the name and the flair of the comment header, against the weight 1 of the
+     * spacer before the translation indicator. The column takes the width that the indicator does not need:
+     * the name, the flair and the badge shrink when the header is full, instead of the indicator,
+     * and the indicator stays at the end of the header.
+     */
+    private static final float COMMENT_HEADER_COLUMN_WEIGHT = 10_000f;
+
+    /**
+     * Injection point: modifier of the column with the name and the flair of a comment header.
+     */
+    public static Object getCommentHeaderColumnModifier(Object modifier) {
+        if (!isCommentButtonEnabled()) {
+            return modifier;
+        }
+        try {
+            return withWeight(modifier, COMMENT_HEADER_COLUMN_WEIGHT, true);
+        } catch (Exception ex) {
+            Logger.printException(() -> "getCommentHeaderColumnModifier failure", ex);
+            return modifier;
+        }
+    }
+
+    private static boolean isCommentButtonEnabled() {
+        return Settings.TRANSLATION_COMMENT_BUTTON.isAvailable() && Settings.TRANSLATION_COMMENT_BUTTON.get();
+    }
+
+    /**
+     * Injection point: state of the translation indicator of a comment header.
+     * The indicator of the app translates the comment when it is clickable: it is the translate button
+     * of the comments in another language, the translation is shown in place with "Show original".
+     */
+    public static TranslationIndicatorState getCommentIndicatorState(TranslationIndicatorState state,
+                                                                     @Nullable Comment comment) {
+        if (state != TranslationIndicatorState.None || comment == null || !isCommentButtonEnabled()) {
+            return state;
+        }
+        try {
+            if (comment.isTranslated()) {
+                return state;
+            }
+            // Comments of an unknown language get no button: they are often in the language of the user.
+            String language = comment.getLanguageCode();
+            if (language == null || language.isEmpty()
+                    || baseLanguage(language).equals(baseLanguage(getTargetLanguage()))) {
+                return state;
+            }
+            if (!hasTextToTranslate(comment.getBody())) {
+                return state;
+            }
+            cacheComment(comment);
+            return TranslationIndicatorState.ClickableTranslate;
+        } catch (Exception ex) {
+            Logger.printException(() -> "getCommentIndicatorState failure", ex);
+            return state;
         }
     }
 
@@ -1046,15 +1140,20 @@ public final class PostTranslationPatch {
         static CommentText of(Comment comment) throws Exception {
             RichTextResponse richTextResponse = comment.getRtjson();
             String richText = richTextResponse != null ? richTextResponse.getRichTextString() : null;
-            RichTextTranslator document = richText != null && !richText.isEmpty()
-                    ? RichTextTranslator.prepare(richText) : null;
             String markdown = comment.getBody();
 
             // The rich text and the markdown are the same text: translate only one of them.
+            RichTextTranslator document = null;
             List<String> fragments;
-            if (document != null) {
+            if (richText != null && !richText.isEmpty()) {
+                document = RichTextTranslator.prepare(richText);
+                if (document == null) {
+                    // Only media (an image, a gif): the markdown of the media is not text to translate.
+                    return null;
+                }
                 fragments = document.fragments();
-            } else if (markdown != null && !markdown.trim().isEmpty()) {
+            } else if (markdown != null && hasTextToTranslate(markdown) && !MARKDOWN_MEDIA.matcher(markdown).find()) {
+                // Markdown with media is shown as text when it comes back from the translation service.
                 fragments = Collections.singletonList(RichTextTranslator.escape(markdown));
             } else {
                 return null;

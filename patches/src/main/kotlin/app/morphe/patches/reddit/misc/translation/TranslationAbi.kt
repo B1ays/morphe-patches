@@ -137,9 +137,26 @@ internal data class CommentsAbi(
     val translateEventMethod: MutableMethod,
     /** Comment menu: comment, translate visible, show original visible registers. */
     val menu: CallSite,
+    /** Translation indicator of the comment header, where all states join: state, comment registers. */
+    val indicator: CallSite,
+    val headerLayout: CommentHeaderLayoutAbi,
     val commentsLoadedMethod: MutableMethod,
     val commentLinkPostIdField: FieldReference,
     val commentLinkNumCommentsField: FieldReference,
+)
+
+/**
+ * Layout of the comment header with the translation indicator:
+ * Row { Column { name row, flair and badge row }, weighted spacer, translation indicator }.
+ */
+internal data class CommentHeaderLayoutAbi(
+    /** The materialized modifier of the column with the name and the flair: its register. */
+    val columnModifier: CallSite,
+    val modifierType: String,
+    /** Modifier.then(Modifier). */
+    val modifierThen: MethodReference,
+    /** RowScope.weight(weight, fill) element. */
+    val weightConstructor: MethodReference,
 )
 
 internal fun FieldReference.smali() = "$definingClass->$name:$type"
@@ -571,10 +588,103 @@ private fun BytecodePatchContext.resolveComments(): CommentsAbi {
             method.parameterTypes.getOrNull(1) == "Lkotlin/jvm/functions/Function1;"
         },
         menu = resolveCommentMenu(),
+        indicator = resolveCommentIndicator(),
+        headerLayout = resolveCommentHeaderLayout(),
         commentsLoadedMethod = CommentsLoadedFingerprint.matchSingle().method,
         commentLinkPostIdField = commentLinkPostIdField,
         commentLinkNumCommentsField = commentLinkNumCommentsField,
     )
+}
+
+private fun BytecodePatchContext.resolveCommentIndicator() = CommentHeaderFingerprint.matchSingle().let { match ->
+    match.method.run {
+        val translatableCall = getInstruction(match.instructionMatches.first().index)
+        val commentRegister = when (translatableCall) {
+            is FiveRegisterInstruction -> translatableCall.registerC
+            is RegisterRangeInstruction -> translatableCall.startRegister
+            else -> throw PatchException("Unexpected isTranslatable call")
+        }
+        val clickableIndex = match.instructionMatches.last().index
+        val stateRegister = getInstruction<OneRegisterInstruction>(clickableIndex).registerA
+        // All the states are moved to the same register after the branches.
+        val gotoIndex = indexOfFirstInstructionOrThrow(clickableIndex) { opcode in GOTO_OPCODES }
+        val joinIndex = (getInstruction(gotoIndex) as BuilderOffsetInstruction).target.location.index
+        val join = getInstruction(joinIndex)
+        if (!join.opcode.name.startsWith("move-object") || (join as TwoRegisterInstruction).registerB != stateRegister) {
+            throw PatchException("Unexpected translation indicator state join")
+        }
+        requireLowRegisters(stateRegister, commentRegister)
+        CallSite(this, joinIndex, listOf(stateRegister, commentRegister))
+    }
+}
+
+private fun BytecodePatchContext.resolveCommentHeaderLayout(): CommentHeaderLayoutAbi {
+    val header = CommentHeaderFingerprint.matchSingle()
+    val headerModelType = header.originalMethod.returnType
+    // The holder of the translation indicator state, built with the header model.
+    val indicatorModelType = header.method.instructions.firstNotNullOf { instruction ->
+        instruction.getReference<TypeReference>()?.type?.takeIf { type ->
+            instruction.opcode == Opcode.NEW_INSTANCE && classDefByOrNull(type)?.fields?.any {
+                it.type == TRANSLATION_INDICATOR_STATE_CLASS
+            } == true
+        }
+    }
+
+    // Composable of the comment header that shows the translation indicator.
+    val match = Fingerprint(
+        returnType = "V",
+        filters = listOf(
+            methodCall(
+                parameters = listOf(indicatorModelType, "L", "Lkotlin/jvm/functions/Function0;", "L", "I"),
+                returnType = "V"
+            )
+        ),
+        custom = { method, _ -> method.parameterTypes.any { it.toString() == headerModelType } }
+    ).matchSingle()
+
+    return match.method.run {
+        val indicatorCall = getInstruction<ReferenceInstruction>(match.instructionMatches.first().index)
+            .getReference<MethodReference>()!!
+        val modifierType = indicatorCall.parameterTypes[1].toString()
+        val composerType = indicatorCall.parameterTypes[3].toString()
+
+        // The weighted spacer before the indicator: Spacer(Modifier.weight(1f)).
+        val weightIndex = indexOfFirstInstructionReversedOrThrow(match.instructionMatches.first().index) {
+            val reference = getReference<MethodReference>()
+            opcode == Opcode.INVOKE_DIRECT && reference?.name == "<init>" &&
+                    reference.parameterTypes.map { it.toString() } == listOf("F", "Z")
+        }
+        val weightConstructor = getInstruction<ReferenceInstruction>(weightIndex).getReference<MethodReference>()!!
+
+        // The modifier of a layout node is materialized when the node is created. The nodes before the spacer:
+        // the header row, the column, the name row and the flair and badge row.
+        val materializeIndices = instructions.withIndex().filter { (index, instruction) ->
+            val reference = instruction.getReference<MethodReference>()
+            index < weightIndex && instruction.opcode == Opcode.INVOKE_STATIC &&
+                    reference?.returnType == modifierType &&
+                    reference.parameterTypes.map { it.toString() } == listOf(composerType, modifierType)
+        }.map { it.index }
+        if (materializeIndices.size != 4) {
+            throw PatchException("Unexpected comment header layout: ${materializeIndices.size} nodes")
+        }
+        val modifierIndex = materializeIndices[1] + 1
+        if (getInstruction(modifierIndex).opcode != Opcode.MOVE_RESULT_OBJECT) {
+            throw PatchException("Unexpected comment header column")
+        }
+
+        val modifierThen = classDefBy(modifierType).methods.single { method ->
+            method.returnType == modifierType && method.parameterTypes.map { it.toString() } == listOf(modifierType)
+        }
+
+        CommentHeaderLayoutAbi(
+            columnModifier = CallSite(
+                this, modifierIndex + 1, listOf(getInstruction<OneRegisterInstruction>(modifierIndex).registerA)
+            ),
+            modifierType = modifierType,
+            modifierThen = modifierThen,
+            weightConstructor = weightConstructor,
+        )
+    }
 }
 
 private fun BytecodePatchContext.resolveCommentMenu() = CommentOverflowMenuFingerprint.matchSingle().method.run {

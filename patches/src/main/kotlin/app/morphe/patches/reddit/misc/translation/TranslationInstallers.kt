@@ -419,6 +419,41 @@ private fun BytecodePatchContext.installComments(comments: CommentsAbi) = with(c
         """
     )
 
+    // Translate button of the comment header: the translation indicator of the app.
+    val (indicatorState, indicatorComment) = indicator.registers
+    indicator.method.addInstructionsAtControlFlowLabel(
+        indicator.index,
+        """
+            invoke-static { v$indicatorState, v$indicatorComment }, $EXTENSION_CLASS->getCommentIndicatorState($TRANSLATION_INDICATOR_STATE_CLASS$COMMENT_CLASS)$TRANSLATION_INDICATOR_STATE_CLASS
+            move-result-object v$indicatorState
+        """
+    )
+
+    // The column with the name and the flair of the comment header shrinks before the translation indicator does.
+    with(headerLayout) {
+        val modifierRegister = columnModifier.registers[0]
+        columnModifier.method.addInstructions(
+            columnModifier.index,
+            """
+                invoke-static/range { v$modifierRegister .. v$modifierRegister }, $EXTENSION_CLASS->getCommentHeaderColumnModifier(Ljava/lang/Object;)Ljava/lang/Object;
+                move-result-object v$modifierRegister
+                check-cast v$modifierRegister, $modifierType
+            """
+        )
+
+        replaceStaticBridge(
+            "withWeight",
+            """
+                new-instance v0, ${weightConstructor.definingClass}
+                invoke-direct { v0, p1, p2 }, ${weightConstructor.smali()}
+                check-cast p0, $modifierType
+                invoke-interface { p0, v0 }, ${modifierThen.smali()}
+                move-result-object v0
+                return-object v0
+            """
+        )
+    }
+
     // "Translate" in the comment menu.
     val (comment, translateVisible, showOriginalVisible) = menu.registers
     menu.method.addInstructionsAtControlFlowLabel(

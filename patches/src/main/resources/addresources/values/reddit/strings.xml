@@ -83,6 +83,9 @@ Second \"item\" text"</string>
     <string name="morphe_translation_comment_menu_title">Translate in the comment menu</string>
     <string name="morphe_translation_comment_menu_summary_on">The comment menu has a Translate action, the comment is translated by the translation service</string>
     <string name="morphe_translation_comment_menu_summary_off">The comment menu shows Translate only when Reddit offers it</string>
+    <string name="morphe_translation_comment_button_title">Translate button in comments</string>
+    <string name="morphe_translation_comment_button_summary_on">Comments in another language have a translate button in the header, the Translate action of the comment menu is hidden</string>
+    <string name="morphe_translation_comment_button_summary_off">Comments are translated from the comment menu</string>
     <string name="morphe_translation_unavailable_toast">Translation to %s is not available for this post</string>
 
     <string name="morphe_screen_miscellaneous_title">Miscellaneous</string>

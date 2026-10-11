@@ -41,6 +41,7 @@ public class TranslationPreferenceCategory extends ConditionalPreferenceCategory
         addPreference(switchPreference(context, Settings.TRANSLATION_FALLBACK));
         addPreference(servicePreference(context, Settings.TRANSLATION_SERVICE));
         addPreference(switchPreference(context, Settings.TRANSLATION_COMMENT_MENU));
+        addPreference(switchPreference(context, Settings.TRANSLATION_COMMENT_BUTTON));
     }
 
     /**
