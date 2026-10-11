@@ -51,9 +51,12 @@ public class Settings extends BaseSettings {
     public static final BooleanSetting TRANSLATE_ALL_POSTS = new BooleanSetting("morphe_translate_all_posts", FALSE);
     /** A value of the shared language list: DEFAULT (app language) or an ISO 639 code in upper case. */
     public static final StringSetting TRANSLATION_LANGUAGE = new StringSetting("morphe_translation_language", "DEFAULT");
-    public static final BooleanSetting TRANSLATION_YANDEX_FALLBACK = new BooleanSetting("morphe_translation_yandex_fallback", TRUE);
-    /** The Reddit translation of a single comment returns nothing for most users: it works with Yandex. */
-    public static final BooleanSetting TRANSLATION_COMMENT_MENU = new BooleanSetting("morphe_translation_comment_menu", TRUE, parent(TRANSLATION_YANDEX_FALLBACK));
+    /** Translate with a translation service when Reddit has no translation. */
+    public static final BooleanSetting TRANSLATION_FALLBACK = new BooleanSetting("morphe_translation_fallback", TRUE);
+    /** A TranslationService name: YANDEX or GOOGLE. */
+    public static final StringSetting TRANSLATION_SERVICE = new StringSetting("morphe_translation_service", "YANDEX", parent(TRANSLATION_FALLBACK));
+    /** The Reddit translation of a single comment returns nothing for most users: it works with the translation service. */
+    public static final BooleanSetting TRANSLATION_COMMENT_MENU = new BooleanSetting("morphe_translation_comment_menu", TRUE, parent(TRANSLATION_FALLBACK));
 
     // Miscellaneous
     public static final BooleanSetting OPEN_LINKS_DIRECTLY = new BooleanSetting("morphe_open_links_directly", TRUE);

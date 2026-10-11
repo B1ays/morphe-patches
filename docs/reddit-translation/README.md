@@ -3,8 +3,8 @@
 [Русская версия](README.ru.md)
 
 The **Translate posts** patch translates Reddit posts and comments into the user's language inside the
-official Reddit app. It uses the machine translation that Reddit itself serves and falls back to Yandex
-when Reddit has no translation.
+official Reddit app. It uses the machine translation that Reddit itself serves and falls back to Yandex or
+Google when Reddit has no translation.
 
 Tested on Reddit **2026.41.0**.
 
@@ -15,9 +15,9 @@ Tested on Reddit **2026.41.0**.
 | Translate all posts | Every post opens already translated: title, text and comments. |
 | Translate on demand | With automatic translation off, every foreign post shows a "Translate" banner. "Translate" translates the post in place, without leaving the screen; comments stay in the original. |
 | Show original | The banner switches a translated post back to the original. |
-| Yandex fallback | Reddit has translations only for some posts and languages. When there is none, the title and the text of the post are translated with Yandex. |
-| Translation source | The banner title shows who translated the post: "… · Reddit" or "… · Yandex". |
-| Translate a comment | The comment menu gets a "Translate" action. The comment is translated with Yandex and shown in place, with the app's own "Show original". |
+| Fallback translation | Reddit has translations only for some posts and languages. When there is none, the title and the text of the post are translated by the selected service: Yandex or Google. |
+| Translation source | The banner title shows who translated the post: "… · Reddit", "… · Yandex" or "… · Google". |
+| Translate a comment | The comment menu gets a "Translate" action. The comment is translated by the selected service and shown in place, with the app's own "Show original". |
 | Translation language | "App language" (default) or any language of the shared Morphe language list. |
 
 ## Settings
@@ -28,8 +28,9 @@ Morphe settings → **Translation**:
 |---|---|---|
 | `morphe_translate_all_posts` | off | Open every post translated (MT SEO mode, see below). |
 | `morphe_translation_language` | `DEFAULT` | Target language. `DEFAULT` is the app language, other values are ISO 639 codes. |
-| `morphe_translation_yandex_fallback` | on | Use Yandex when Reddit has no translation. Text is sent to Yandex. |
-| `morphe_translation_comment_menu` | on | "Translate" in the comment menu. Available only with the Yandex fallback on. |
+| `morphe_translation_fallback` | on | Use the translation service when Reddit has no translation. Text is sent to the service. |
+| `morphe_translation_service` | `YANDEX` | Translation service: `YANDEX` or `GOOGLE`. Available only with the fallback on. |
+| `morphe_translation_comment_menu` | on | "Translate" in the comment menu. Available only with the fallback on. |
 
 ## How it works
 
@@ -62,33 +63,46 @@ The patch turns this mode on without such a link:
   still needed is decided when it fires, from the last load, because comments often arrive in two loads in
   a row.
 
-### Yandex fallback
+### Fallback translation: Yandex or Google
+
+Both services are used through the HTML endpoints of their browser page translation. No user key is
+needed, and the HTML markup of the texts is kept. `TranslationService` selects the client.
 
 - **Posts.** Posts are loaded by id in the GraphQL data source. When MT SEO was requested but a post
-  came back untranslated, the patch translates the title and the rich text (or the HTML text) with Yandex
-  on the request thread. It then merges the result with the app's own "merge translation" function, so the
+  came back untranslated, the patch translates the title and the rich text (or the HTML text) with the
+  selected service on the request thread. It then merges the result with the app's own "merge translation" function, so the
   app sees an ordinary translated post. Media, previews and galleries are kept from the original post.
 - **Comments.** Reddit's per-comment translation API returns nothing for many users. When the app asks
   its translations repository for a comment translation and gets nothing, the patch translates the
-  comment with Yandex in the background. It puts the translation into the repository cache and the
+  comment with the selected service in the background. It puts the translation into the repository cache and the
   original into the "show original" map, then sends the comment's "Translate" event again. The app finds
   the translation in its cache and shows it in place.
 - **Rich text.** Reddit renders post and comment bodies from rich text JSON (`rtjson`). `RichTextTranslator`
   extracts the text and link nodes as HTML fragments with inline styles, translates them in batches and
   writes the translations back. The document structure, links and formatting are kept.
-- **Requests.** `YandexTranslator` uses the Yandex browser translation endpoint (`format=html`). It sends
-  chunked batches of up to 10 texts and 1500 characters, and retries 429 and 5xx responses up to 3 times
-  with backoff. The first failure shows a toast; later failures are only logged until a request succeeds
-  again.
+- **Yandex.** `YandexTranslator` uses the Yandex Browser translation endpoint
+  (`browser.translate.yandex.net/api/v1/tr.json/translate`, `srv=yabrowser`, `format=html`). It only
+  accepts GET, so long texts are split at sentence boundaries and sent in batches of up to 10 texts and
+  1500 characters.
+- **Google.** `GoogleTranslator` uses the Chrome page translation endpoint
+  (`POST translate-pa.googleapis.com/v1/translateHtml` with the public Chrome key). The body
+  `[[[texts], "auto", target], "wt_lib"]` carries a batch of texts; the response holds the translations and
+  the detected languages. Long texts are accepted (20 000+ characters), so batches are only limited to
+  10 000 characters and 100 texts.
+- **Errors.** Both clients retry 429 and 5xx responses up to 3 times with backoff. The first failure shows
+  a toast with the service name; later failures are only logged until a request succeeds again.
 
 ### Translation source in the banner
 
 The post detail screen is a **pager**: together with the open post it also loads the posts next to it.
 Any "last loaded post" state is therefore unreliable. The patch keeps the source per screen:
 
-- When a post loads, the screen's `RedditPostDetailViewModel` is stored with a flag "translated by
-  Yandex". Yandex translations are recognised by a hash of the translated title. The hashes are kept in
-  preferences (LRU of 500), because the app caches translated posts between launches.
+- The service is recorded by post id when the patch translates the post, before the post reaches the
+  screen, so the order in which the screen and the banner update does not matter. A post that comes
+  translated from the app cache is recognised by a hash of its translated title, stored with the service
+  name in preferences (LRU of 500), because the app caches translated posts between launches. A
+  translated post without a record is translated by Reddit.
+- When a post loads, the screen's `RedditPostDetailViewModel` is stored with the post id.
 - The banner section of each screen gets that screen's post detail context. It is a Kotlin function
   reference, and its bound receiver is the same `RedditPostDetailViewModel`. While the banner is composed,
   the patch knows which screen the banner belongs to.
@@ -107,7 +121,9 @@ patches/src/main/kotlin/app/morphe/patches/reddit/misc/translation/
 
 extensions/reddit/src/main/java/app/morphe/extension/reddit/
   patches/PostTranslationPatch.java     logic, injection points, extension interfaces
+  translation/TranslationService.java   selected service: Yandex or Google
   translation/YandexTranslator.java     Yandex client (Requester, retries)
+  translation/GoogleTranslator.java     Google client (Requester, retries)
   translation/RichTextTranslator.java   rich text JSON <-> HTML fragments
   settings/Settings.java, settings/preference/categories/TranslationPreferenceCategory.java
 
@@ -163,8 +179,8 @@ flowchart TD
     E --> F
     F --> G{Post translated by Reddit?}
     G -- yes --> H[Show post · Reddit]
-    G -- no, Yandex on --> I[Yandex: title + rich text<br/>merge into the post]
-    I --> J[Show post · Yandex]
+    G -- no, fallback on --> I[Yandex or Google: title + rich text<br/>merge into the post]
+    I --> J[Show post · Yandex / Google]
     F --> K[Comments: only translated ones]
     K --> L{Empty or sparse?}
     L -- yes --> M[Reload post 1-4 times]
@@ -175,7 +191,7 @@ sequenceDiagram
     participant U as User
     participant App as Reddit app
     participant P as PostTranslationPatch
-    participant Y as Yandex
+    participant Y as Yandex / Google
     U->>App: Comment menu → Translate
     App->>App: translate event
     App->>P: onTranslateCommentEvent (event, dispatcher)
@@ -195,7 +211,7 @@ sequenceDiagram
   but its comments stay in the original until the app restarts.
 - Comments that the server has not translated yet are missing in MT SEO mode until it translates them;
   the reloads only wait for them.
-- Mixed sources: a post can be translated by Yandex while its comments are translated by Reddit. The
+- Mixed sources: a post can be translated by Yandex or Google while its comments are translated by Reddit. The
   banner shows the source of the post.
 - The fingerprints were checked on 2026.41.0 only.
 
@@ -210,7 +226,7 @@ java -jar morphe-desktop-<version>-all.jar patch -p patches/build/libs/patches-<
 
 The build needs an SDK platform named `platforms/android-37`. Device checks:
 
-- a post translated by Reddit and one translated by Yandex, with the source in the banner;
+- a post translated by Reddit, one translated by Yandex and one by Google, with the source in the banner;
 - "Translate" with automatic translation off, then "Show original";
 - swiping the post pager;
 - "Translate" and "Show original" in the comment menu;

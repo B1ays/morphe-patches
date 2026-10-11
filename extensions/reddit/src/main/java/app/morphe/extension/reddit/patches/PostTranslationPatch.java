@@ -45,7 +45,7 @@ import java.util.WeakHashMap;
 
 import app.morphe.extension.reddit.settings.Settings;
 import app.morphe.extension.reddit.translation.RichTextTranslator;
-import app.morphe.extension.reddit.translation.YandexTranslator;
+import app.morphe.extension.reddit.translation.TranslationService;
 import app.morphe.extension.shared.Logger;
 import app.morphe.extension.shared.Utils;
 import app.morphe.extension.shared.requests.Requester;
@@ -59,7 +59,7 @@ import app.morphe.extension.shared.translation.TextTranslator.TranslationHttpExc
  * - "Translate all posts" off: the translation banner is shown in every post. "Translate" switches the screen
  *   to MT SEO mode and reloads the post in place (or reopens it with the ?tl= link if the screen cannot be switched).
  * - Reddit has a translation only for some post and language pairs. Without it the title and the text of the post
- *   are translated with Yandex (if enabled), otherwise a toast is shown after the "Translate" button.
+ *   are translated with Yandex or Google (if enabled), otherwise a toast is shown after the "Translate" button.
  * - In MT SEO mode the server returns only the comments it has already translated and translates the rest
  *   on demand: the post is reloaded when no comments or only a few are loaded.
  * <p>
@@ -90,30 +90,45 @@ public final class PostTranslationPatch {
     private static final Set<String> SHOW_ORIGINAL = Collections.synchronizedSet(new HashSet<>());
 
     /**
-     * Hashes of the titles of the posts translated with Yandex, by kind_id.
+     * Posts translated by a translation service: kind_id -> "SERVICE:title hash".
      * Kept between app launches: translated posts are cached by the app.
      */
-    private static final String YANDEX_TITLES_PREFERENCES = "morphe_translation_yandex_titles";
-    private static final String YANDEX_TITLES_KEY = "titles";
-    private static final int YANDEX_TITLES_MAX = 500;
+    private static final String FALLBACK_TITLES_PREFERENCES = "morphe_translation_fallback_titles";
+    /** Titles translated with Yandex before the translation service was selectable: kind_id -> title hash. */
+    private static final String LEGACY_YANDEX_TITLES_PREFERENCES = "morphe_translation_yandex_titles";
+    private static final String FALLBACK_TITLES_KEY = "titles";
+    private static final int FALLBACK_TITLES_MAX = 500;
 
     @Nullable
-    private static LinkedHashMap<String, Integer> yandexTitles;
-
-    /** If the post of the post detail screen that loaded last is translated with Yandex. */
-    private static volatile boolean screenPostTranslatedByYandex;
+    private static LinkedHashMap<String, String> fallbackTitles;
 
     /**
-     * Post detail screens (RedditPostDetailViewModel), and if their post is translated with Yandex.
+     * Translation services of the translated posts (kind_id), set when the post is translated,
+     * before it reaches the screen. A post translated by Reddit has no entry.
+     */
+    private static final Map<String, TranslationService> POST_SERVICES = Collections.synchronizedMap(
+            new LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, TranslationService> eldest) {
+                    return size() > 200;
+                }
+            });
+
+    /**
+     * Post detail screens (RedditPostDetailViewModel) and their post (kind_id).
      * The post detail pager also loads the posts next to the open post.
      */
-    private static final Map<Object, Boolean> YANDEX_SCREENS = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<Object, String> SCREEN_POSTS = Collections.synchronizedMap(new WeakHashMap<>());
+
+    /** Post (kind_id) of the post detail screen that loaded last. */
+    @Nullable
+    private static volatile String lastLoadedPostId;
 
     /** Post detail screen whose translation banner is being composed. Main thread. */
     @Nullable
     private static WeakReference<Object> bannerScreen;
 
-    /** Loaded comments by kind_id, to translate them with Yandex. */
+    /** Loaded comments by kind_id, to translate them with the translation service. */
     private static final Map<String, WeakReference<Comment>> COMMENTS = Collections.synchronizedMap(
             new LinkedHashMap<>(64, 0.75f, true) {
                 @Override
@@ -133,15 +148,15 @@ public final class PostTranslationPatch {
                 }
             });
 
-    /** Comments (kind_id) whose "Translate" event was sent again with a Yandex translation, and when. */
+    /** Comments (kind_id) whose "Translate" event was sent again with a service translation, and when. */
     private static final Map<String, Long> RESENT_COMMENT_EVENTS = Collections.synchronizedMap(new HashMap<>());
     private static final long COMMENT_EVENT_RESEND_TIMEOUT_MS = 10_000;
 
     /**
-     * The first Yandex failure is shown to the user, the next ones are only logged
+     * The first translation service failure is shown to the user, the next ones are only logged
      * until a translation works again.
      */
-    private static volatile boolean reportNextYandexError = true;
+    private static volatile boolean reportNextServiceError = true;
 
     /** Comment of the comment menu that is being opened. */
     @Nullable
@@ -186,8 +201,8 @@ public final class PostTranslationPatch {
     private static boolean retryPending;
     private static boolean retryNeeded;
 
-    /** Yandex translations of posts: "kind_id|language" -> {title, rich text, html}. */
-    private static final Map<String, String[]> YANDEX_CACHE = Collections.synchronizedMap(
+    /** Service translations of posts: "kind_id|language|SERVICE" -> {title, rich text, html}. */
+    private static final Map<String, String[]> FALLBACK_CACHE = Collections.synchronizedMap(
             new LinkedHashMap<>(16, 0.75f, true) {
                 @Override
                 protected boolean removeEldestEntry(Map.Entry<String, String[]> eldest) {
@@ -501,12 +516,13 @@ public final class PostTranslationPatch {
         try {
             WeakReference<Object> reference = bannerScreen;
             Object screen = reference != null ? reference.get() : null;
-            Boolean screenTranslatedByYandex = screen != null ? YANDEX_SCREENS.get(screen) : null;
-            boolean translatedByYandex = screenTranslatedByYandex != null
-                    ? screenTranslatedByYandex
-                    : screenPostTranslatedByYandex;
-            String source = translatedByYandex
-                    ? str("morphe_translation_source_yandex")
+            String postId = screen != null ? SCREEN_POSTS.get(screen) : null;
+            if (postId == null) {
+                postId = lastLoadedPostId;
+            }
+            TranslationService service = postId != null ? POST_SERVICES.get(postId) : null;
+            String source = service != null
+                    ? service.displayName()
                     : str("morphe_translation_source_reddit");
             return str("morphe_translation_banner_title", title, source);
         } catch (Exception ex) {
@@ -574,15 +590,25 @@ public final class PostTranslationPatch {
             if (id != null) {
                 POST_DISPATCHERS.put(id, dispatcher);
             }
-            boolean translatedByYandex = link.isTranslated() && isYandexTranslation(link);
-            screenPostTranslatedByYandex = translatedByYandex;
-            try {
-                Object screen = postDispatcher.patch_getScreen();
-                if (screen != null) {
-                    YANDEX_SCREENS.put(screen, translatedByYandex);
+            if (id != null) {
+                lastLoadedPostId = id;
+                // The post can come translated from the app cache, or be translated by Reddit later.
+                if (link.isTranslated()) {
+                    TranslationService service = getTranslationService(link);
+                    if (service != null) {
+                        POST_SERVICES.put(id, service);
+                    } else {
+                        POST_SERVICES.remove(id);
+                    }
                 }
-            } catch (Exception ex) {
-                Logger.printException(() -> "Post detail screen not found", ex);
+                try {
+                    Object screen = postDispatcher.patch_getScreen();
+                    if (screen != null) {
+                        SCREEN_POSTS.put(screen, id);
+                    }
+                } catch (Exception ex) {
+                    Logger.printException(() -> "Post detail screen not found", ex);
+                }
             }
         }
         try {
@@ -610,7 +636,7 @@ public final class PostTranslationPatch {
 
     /**
      * Injection point: posts loaded by id.
-     * Translates with Yandex the posts that were requested in MT SEO mode but are not translated.
+     * Translates with the translation service the posts that were requested in MT SEO mode but are not translated.
      * Runs on the coroutine thread of the request.
      */
     public static List<?> translateLoadedPosts(@Nullable List<?> links, boolean mtSeo) {
@@ -618,9 +644,10 @@ public final class PostTranslationPatch {
             return links;
         }
         try {
-            if (!Settings.TRANSLATION_YANDEX_FALLBACK.get() || Utils.isCurrentlyOnMainThread()) {
+            if (!Settings.TRANSLATION_FALLBACK.get() || Utils.isCurrentlyOnMainThread()) {
                 return links;
             }
+            TranslationService service = TranslationService.selected();
             String language = lastRequestedLanguage;
             if (language == null || language.isEmpty()) {
                 language = getTargetLanguage();
@@ -634,7 +661,7 @@ public final class PostTranslationPatch {
                 if (link.isTranslated() || link.getPromoted() || isPostInLanguage(link, language)) {
                     continue;
                 }
-                Link translated = translateWithYandex(link, language);
+                Link translated = translateWithService(link, language, service);
                 if (translated != null) {
                     if (result == null) {
                         result = new ArrayList<>(links);
@@ -650,14 +677,14 @@ public final class PostTranslationPatch {
     }
 
     @Nullable
-    private static Link translateWithYandex(Link link, String language) {
+    private static Link translateWithService(Link link, String language, TranslationService service) {
         String id = link.getKindWithId();
-        String key = id + "|" + language;
+        String key = id + "|" + language + "|" + service.name();
         try {
-            String[] translation = YANDEX_CACHE.get(key);
+            String[] translation = FALLBACK_CACHE.get(key);
             if (translation == null) {
-                translation = requestYandexTranslation(link, language);
-                YANDEX_CACHE.put(key, translation);
+                translation = requestServiceTranslation(link, language, service);
+                FALLBACK_CACHE.put(key, translation);
             }
 
             // Media is taken as is by the merge: keep the media of the post.
@@ -671,85 +698,106 @@ public final class PostTranslationPatch {
                 isTranslatedField = field;
             }
             isTranslatedField.setBoolean(merged, true);
-            rememberYandexTranslation(id, merged.getTitle());
+            rememberServiceTranslation(id, merged.getTitle(), service);
+            if (id != null) {
+                POST_SERVICES.put(id, service);
+            }
             return merged;
         } catch (IOException | TranslationHttpException ex) {
-            onYandexError("Yandex translation failed for " + id, ex);
+            onServiceError(service, service + " translation failed for " + id, ex);
             return null;
         } catch (Exception ex) {
-            Logger.printException(() -> "Yandex translation failed for " + id, ex);
+            Logger.printException(() -> service + " translation failed for " + id, ex);
             return null;
         }
     }
 
     @Nullable
-    private static SharedPreferences getYandexTitlesPreferences() {
+    private static SharedPreferences getPreferences(String name) {
         Context context = Utils.getContext();
-        return context != null
-                ? context.getSharedPreferences(YANDEX_TITLES_PREFERENCES, Context.MODE_PRIVATE)
-                : null;
+        return context != null ? context.getSharedPreferences(name, Context.MODE_PRIVATE) : null;
     }
 
     /**
-     * @return Title hashes of the posts translated with Yandex, oldest first.
+     * @return Posts translated by a translation service, oldest first: kind_id -> "SERVICE:title hash".
      */
-    private static synchronized LinkedHashMap<String, Integer> getYandexTitles() {
-        if (yandexTitles == null) {
-            yandexTitles = new LinkedHashMap<>(64, 0.75f, true) {
+    private static synchronized LinkedHashMap<String, String> getFallbackTitles() {
+        if (fallbackTitles == null) {
+            fallbackTitles = new LinkedHashMap<>(64, 0.75f, true) {
                 @Override
-                protected boolean removeEldestEntry(Map.Entry<String, Integer> eldest) {
-                    return size() > YANDEX_TITLES_MAX;
+                protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                    return size() > FALLBACK_TITLES_MAX;
                 }
             };
-            SharedPreferences preferences = getYandexTitlesPreferences();
-            String saved = preferences != null ? preferences.getString(YANDEX_TITLES_KEY, null) : null;
-            if (saved != null) {
-                try {
+            try {
+                SharedPreferences legacy = getPreferences(LEGACY_YANDEX_TITLES_PREFERENCES);
+                String legacySaved = legacy != null ? legacy.getString(FALLBACK_TITLES_KEY, null) : null;
+                if (legacySaved != null) {
+                    JSONObject titles = new JSONObject(legacySaved);
+                    for (Iterator<String> ids = titles.keys(); ids.hasNext(); ) {
+                        String id = ids.next();
+                        fallbackTitles.put(id, TranslationService.YANDEX.name() + ":" + titles.getInt(id));
+                    }
+                }
+
+                SharedPreferences preferences = getPreferences(FALLBACK_TITLES_PREFERENCES);
+                String saved = preferences != null ? preferences.getString(FALLBACK_TITLES_KEY, null) : null;
+                if (saved != null) {
                     JSONObject titles = new JSONObject(saved);
                     for (Iterator<String> ids = titles.keys(); ids.hasNext(); ) {
                         String id = ids.next();
-                        yandexTitles.put(id, titles.getInt(id));
+                        fallbackTitles.put(id, titles.getString(id));
                     }
-                } catch (Exception ex) {
-                    Logger.printException(() -> "Yandex titles cannot be loaded", ex);
                 }
+            } catch (Exception ex) {
+                Logger.printException(() -> "Translated titles cannot be loaded", ex);
             }
         }
-        return yandexTitles;
+        return fallbackTitles;
     }
 
-    private static synchronized void rememberYandexTranslation(@Nullable String id, @Nullable String title) {
+    private static synchronized void rememberServiceTranslation(@Nullable String id, @Nullable String title,
+                                                                TranslationService service) {
         if (id == null || title == null) {
             return;
         }
-        LinkedHashMap<String, Integer> titles = getYandexTitles();
-        titles.put(id, title.hashCode());
-        SharedPreferences preferences = getYandexTitlesPreferences();
+        LinkedHashMap<String, String> titles = getFallbackTitles();
+        titles.put(id, service.name() + ":" + title.hashCode());
+        SharedPreferences preferences = getPreferences(FALLBACK_TITLES_PREFERENCES);
         if (preferences != null) {
-            preferences.edit().putString(YANDEX_TITLES_KEY, new JSONObject(titles).toString()).apply();
+            preferences.edit().putString(FALLBACK_TITLES_KEY, new JSONObject(titles).toString()).apply();
         }
     }
 
     /**
-     * @return If the translation of a post is the Yandex translation.
+     * @return Translation service of a translated post, or null if the post is translated by Reddit.
      */
-    private static synchronized boolean isYandexTranslation(Link link) {
+    @Nullable
+    private static synchronized TranslationService getTranslationService(Link link) {
         try {
             String id = link.getKindWithId();
             String title = link.getTitle();
-            Integer hash = id != null ? getYandexTitles().get(id) : null;
+            String saved = id != null ? getFallbackTitles().get(id) : null;
+            if (saved == null || title == null) {
+                return null;
+            }
+            int separator = saved.indexOf(':');
             // The post can be translated by Reddit later.
-            return hash != null && title != null && hash == title.hashCode();
+            if (separator < 0 || !saved.substring(separator + 1).equals(String.valueOf(title.hashCode()))) {
+                return null;
+            }
+            return TranslationService.fromName(saved.substring(0, separator));
         } catch (Exception ex) {
-            Logger.printException(() -> "isYandexTranslation failure", ex);
-            return false;
+            Logger.printException(() -> "getTranslationService failure", ex);
+            return null;
         }
     }
 
     /**
      * @return {title, rich text, html}, null entries are not translated.
      */
-    private static String[] requestYandexTranslation(Link link, String language) throws Exception {
+    private static String[] requestServiceTranslation(Link link, String language, TranslationService service)
+            throws Exception {
         List<String> fragments = new ArrayList<>();
         String title = link.getTitle();
         boolean hasTitle = title != null && !title.trim().isEmpty();
@@ -774,8 +822,8 @@ public final class PostTranslationPatch {
             return new String[3];
         }
 
-        List<String> translated = YandexTranslator.translateHtml(fragments, language);
-        onYandexSuccess();
+        List<String> translated = service.translateHtml(fragments, language);
+        onServiceSuccess();
         String[] result = new String[3];
         if (hasTitle) {
             result[0] = RichTextTranslator.parse(translated.get(0)).text;
@@ -876,7 +924,7 @@ public final class PostTranslationPatch {
 
     /**
      * Injection point: translated comment loaded from Reddit ("Translate" in the comment menu).
-     * Translates the comment with Yandex if Reddit did not translate it.
+     * Translates the comment with the translation service if Reddit did not translate it.
      * <p>
      * Called on the main thread: the comment is translated in the background and stored in the
      * translation cache of the app, then the "Translate" event is sent again and the app finds
@@ -893,7 +941,7 @@ public final class PostTranslationPatch {
             return result;
         }
         try {
-            if (!Settings.TRANSLATION_YANDEX_FALLBACK.get()) {
+            if (!Settings.TRANSLATION_FALLBACK.get()) {
                 return null;
             }
             String id = translationKey.patch_getCommentId();
@@ -901,7 +949,7 @@ public final class PostTranslationPatch {
                 return null;
             }
             if (!Utils.isCurrentlyOnMainThread()) {
-                return translateCommentWithYandex(id, repository);
+                return translateCommentWithService(id, repository);
             }
 
             // The event was already sent again: the translation is not in the cache, do not loop.
@@ -918,7 +966,7 @@ public final class PostTranslationPatch {
             WeakReference<?> event = pending[0];
             WeakReference<?> dispatcher = pending[1];
             Utils.runOnBackgroundThread(() -> {
-                Object translation = translateCommentWithYandex(id, repository);
+                Object translation = translateCommentWithService(id, repository);
                 if (translation == null) {
                     return;
                 }
@@ -943,7 +991,8 @@ public final class PostTranslationPatch {
      * @return TranslatedComment, or null if the comment is not loaded or cannot be translated.
      */
     @Nullable
-    private static Object translateCommentWithYandex(String id, TranslationsRepository repository) {
+    private static Object translateCommentWithService(String id, TranslationsRepository repository) {
+        TranslationService service = TranslationService.selected();
         WeakReference<Comment> reference = COMMENTS.get(id);
         Comment comment = reference != null ? reference.get() : null;
         if (comment == null) {
@@ -954,22 +1003,22 @@ public final class PostTranslationPatch {
             if (text == null) {
                 return null;
             }
-            List<String> translated = YandexTranslator.translateHtml(text.fragments, getTargetLanguage());
-            onYandexSuccess();
+            List<String> translated = service.translateHtml(text.fragments, getTargetLanguage());
+            onServiceSuccess();
             Object[] translation = text.translation(translated);
             repository.patch_putOriginalComment(id, (OriginalComment) translation[1]);
             return translation[0];
         } catch (IOException | TranslationHttpException ex) {
-            onYandexError("Yandex translation failed for " + id, ex);
+            onServiceError(service, service + " translation failed for " + id, ex);
             return null;
         } catch (Exception ex) {
-            Logger.printException(() -> "Yandex translation failed for " + id, ex);
+            Logger.printException(() -> service + " translation failed for " + id, ex);
             return null;
         }
     }
 
     /**
-     * Text of a comment sent to Yandex.
+     * Text of a comment sent to the translation service.
      */
     private static final class CommentText {
         final Comment comment;
@@ -1035,24 +1084,24 @@ public final class PostTranslationPatch {
     }
 
     /**
-     * A network or service failure of Yandex: shown to the user once, then only logged.
+     * A network or service failure of the translation service: shown to the user once, then only logged.
      */
-    private static void onYandexError(String message, Exception ex) {
+    private static void onServiceError(TranslationService service, String message, Exception ex) {
         Logger.printDebug(() -> message, ex);
-        if (!reportNextYandexError) {
+        if (!reportNextServiceError) {
             return;
         }
-        reportNextYandexError = false;
+        reportNextServiceError = false;
         String reason = ex instanceof TranslationHttpException http
                 ? str(http.statusCode == 429
-                        ? "morphe_translation_yandex_error_rate_limit"
-                        : "morphe_translation_yandex_error_status", http.statusCode)
-                : str("morphe_translation_yandex_error_network");
-        Utils.showToastShort(str("morphe_translation_yandex_error_toast", reason));
+                        ? "morphe_translation_service_error_rate_limit"
+                        : "morphe_translation_service_error_status", http.statusCode)
+                : str("morphe_translation_service_error_network");
+        Utils.showToastShort(str("morphe_translation_service_error_toast", service.displayName(), reason));
     }
 
-    private static void onYandexSuccess() {
-        reportNextYandexError = true;
+    private static void onServiceSuccess() {
+        reportNextServiceError = true;
     }
 
     // endregion
