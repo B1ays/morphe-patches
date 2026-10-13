@@ -97,4 +97,9 @@ Second \"item\" text"</string>
   <string name="morphe_app_icon_choose_title">Выберите значок приложения</string>
   <string name="morphe_app_icon_default">По умолчанию</string>
   <string name="morphe_app_icon_unknown">Неизвестно</string>
+  <string name="morphe_copy_image_button_title">Показывать кнопку копирования изображения</string>
+  <string name="morphe_copy_image_button_summary">Добавляет в меню полноэкранного просмотра кнопку копирования изображения в буфер обмена</string>
+  <string name="morphe_copy_image_menu_item">Копировать изображение</string>
+  <string name="morphe_copy_image_success">Изображение скопировано в буфер обмена</string>
+  <string name="morphe_copy_image_failure">Не удалось скопировать изображение</string>
 </resources>
