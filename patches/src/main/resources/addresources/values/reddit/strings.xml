@@ -63,6 +63,31 @@ Second \"item\" text"</string>
     <string name="morphe_remove_nsfw_dialog_title">Remove NSFW warning dialog</string>
     <string name="morphe_remove_nsfw_dialog_summary">Automatically accepts the NSFW content warning when visiting a subreddit</string>
 
+    <string name="morphe_screen_translation_title">Translation</string>
+    <string name="morphe_translate_all_posts_title">Translate all posts</string>
+    <string name="morphe_translate_all_posts_summary_on">Posts and comments open machine translated. Use the banner in a post to show the original</string>
+    <string name="morphe_translate_all_posts_summary_off">A Translate banner is shown in every post. Comments are translated from the comment menu</string>
+    <string name="morphe_translation_language_title">Translation language</string>
+    <string name="morphe_translation_fallback_title">Translate when Reddit cannot</string>
+    <string name="morphe_translation_fallback_summary_on">If Reddit has no translation, posts and comments are translated by the translation service. The text is sent to the service</string>
+    <string name="morphe_translation_fallback_summary_off">Only Reddit translations are used</string>
+    <string name="morphe_translation_service_title">Translation service</string>
+    <string name="morphe_translation_banner_title">%1$s · %2$s</string>
+    <string name="morphe_translation_source_reddit">Reddit</string>
+    <string name="morphe_translation_source_yandex">Yandex</string>
+    <string name="morphe_translation_source_google">Google</string>
+    <string name="morphe_translation_service_error_toast">%1$s translation failed: %2$s</string>
+    <string name="morphe_translation_service_error_network">no connection to the service</string>
+    <string name="morphe_translation_service_error_rate_limit">too many requests, try again later</string>
+    <string name="morphe_translation_service_error_status">service error %d</string>
+    <string name="morphe_translation_comment_menu_title">Translate in the comment menu</string>
+    <string name="morphe_translation_comment_menu_summary_on">The comment menu has a Translate action, the comment is translated by the translation service</string>
+    <string name="morphe_translation_comment_menu_summary_off">The comment menu shows Translate only when Reddit offers it</string>
+    <string name="morphe_translation_comment_button_title">Translate button in comments</string>
+    <string name="morphe_translation_comment_button_summary_on">Comments in another language have a translate button in the header, the Translate action of the comment menu is hidden</string>
+    <string name="morphe_translation_comment_button_summary_off">Comments are translated from the comment menu</string>
+    <string name="morphe_translation_unavailable_toast">Translation to %s is not available for this post</string>
+
     <string name="morphe_screen_miscellaneous_title">Miscellaneous</string>
     <string name="morphe_about_title">About</string>
     <string name="morphe_about_summary">Patch version and official links</string>
