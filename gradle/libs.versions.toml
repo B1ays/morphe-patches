@@ -28,6 +28,8 @@ gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 lang3 = { module = "org.apache.commons:commons-lang3", version.ref = "lang3" }
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 hiddenapi = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version.ref = "hiddenapi" }
+# Compile only, used by app stubs that reference Kotlin types.
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version = "2.4.10" }
 protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version.ref = "protoc" }
 protobuf-protoc = { module = "com.google.protobuf:protoc", version.ref = "protoc" }
 

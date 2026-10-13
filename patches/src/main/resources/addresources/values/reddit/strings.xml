@@ -76,4 +76,9 @@ Second \"item\" text"</string>
     <string name="morphe_app_icon_choose_title">Choose app icon</string>
     <string name="morphe_app_icon_default">Default</string>
     <string name="morphe_app_icon_unknown">Unknown</string>
+    <string name="morphe_copy_image_button_title">Show copy image button</string>
+    <string name="morphe_copy_image_button_summary">Adds a button to copy the image to the clipboard in the menu of the fullscreen image viewer</string>
+    <string name="morphe_copy_image_menu_item">Copy image</string>
+    <string name="morphe_copy_image_success">Image copied to clipboard</string>
+    <string name="morphe_copy_image_failure">Could not copy image</string>
 </resources>

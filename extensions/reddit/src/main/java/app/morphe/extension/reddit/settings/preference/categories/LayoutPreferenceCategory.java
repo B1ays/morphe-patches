@@ -12,6 +12,7 @@ import static app.morphe.extension.shared.StringRef.str;
 import android.content.Context;
 import android.preference.PreferenceScreen;
 
+import app.morphe.extension.reddit.patches.CopyImagePatch;
 import app.morphe.extension.reddit.patches.DisableModernHomePatch;
 import app.morphe.extension.reddit.patches.DisableScreenshotPopupPatch;
 import app.morphe.extension.reddit.patches.CustomFontPatch;
@@ -36,7 +37,8 @@ public class LayoutPreferenceCategory extends ConditionalPreferenceCategory {
 
     @Override
     public boolean getSettingsStatus() {
-        return DisableModernHomePatch.isPatchIncluded() ||
+        return CopyImagePatch.isPatchIncluded() ||
+                DisableModernHomePatch.isPatchIncluded() ||
                 DisableScreenshotPopupPatch.isPatchIncluded() ||
                 CustomFontPatch.isPatchIncluded() ||
                 ForceSystemFontPatch.isPatchIncluded() ||
@@ -48,6 +50,13 @@ public class LayoutPreferenceCategory extends ConditionalPreferenceCategory {
 
     @Override
     public void addPreferences(Context context) {
+        if (CopyImagePatch.isPatchIncluded()) {
+            addPreference(new BooleanSettingPreference(
+                    context,
+                    Settings.COPY_IMAGE_BUTTON
+            ));
+        }
+
         if (CustomFontPatch.isPatchIncluded()) {
             addPreference(new CustomFontTogglePreference(context));
             addPreference(new CustomFontFilePreference(
